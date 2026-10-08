@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# CI/CD artifacts
+version.env
+*.sarif
+image.tar
+gitleaks.json
+trivy-fs.json
+trivy-image.json
+hadolint.json
+semgrep.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

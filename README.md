@@ -10,10 +10,18 @@ CALCULATOR_API_MVK/
 │   ├── __init__.py
 │   ├── main.py          # код приложения
 │   └── test_main.py     # тесты
+├── scripts/
+│   └── bump_version.sh  # автообновление версии (CI/CD)
+├── .github/
+│   └── workflows/
+│       └── ci.yml       # пайплайн CI/CD + security-сканеры
+├── .gitignore
+├── .dockerignore
+├── VERSION              # базовый semver
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── Dockerfile
-├── .dockerignore
+├── SECURITY_REPORT.md   # отчёт по инструментам безопасности
 └── README.md
 ```
 
@@ -76,3 +84,74 @@ docker rm calculator_api_mvk
 | POST  | /power      | Возведение в степень (a^b)   |
 
 тело запроса для операций: `{"a": <число>, "b": <число>}`
+
+## версионирование
+
+базовая версия хранится в файле `VERSION` (semver: `MAJOR.MINOR.PATCH`).
+
+версия обновляется автоматически в пайплайне скриптом `scripts/bump_version.sh`:
+
+- по умолчанию инкрементится **патч** (`0.1.0` → `0.1.1`);
+- `[minor]` в сообщении коммита → инкремент минора (`0.1.1` → `0.2.0`);
+- `[major]` в сообщении коммита → инкремент мажора (`0.2.0` → `1.0.0`).
+
+итоговый тег версии для сборки: `<semver>-build.<GITHUB_RUN_NUMBER>` — уникален для каждой сборки.
+
+версия попадает в приложение через `--build-arg APP_VERSION=...` и отдаётся эндпоинтом `GET /version`.
+
+## CI/CD пайплайн
+
+пайплайн описан в `.github/workflows/ci.yml` и запускается на каждый push в `main` и на pull request.
+
+пайплайн состоит из job'ов:
+
+| Job           | Что делает                                                       |
+|---------------|------------------------------------------------------------------|
+| `test`        | запуск `pytest`                                                  |
+| `version`     | расчёт новой версии через `scripts/bump_version.sh`               |
+| `build`       | сборка и публикация Docker-образа в `ghcr.io`                     |
+| `semgrep`     | SAST-анализ кода (Semgrep)                                        |
+| `trivy_fs`    | SCA + secrets + misconfig в репозитории (Trivy)                   |
+| `trivy_image` | скан собранного образа (Trivy)                                    |
+| `gitleaks`    | поиск секретов и ключей в коде                                    |
+| `hadolint`    | линтер Dockerfile                                                 |
+
+### как обновляется версия при пуше
+
+1. пайплайн читает `VERSION`;
+2. анализирует сообщение последнего коммита;
+3. формирует новую версию и уникальный тег сборки;
+4. собирает образ с этим тегом и публикует в `ghcr.io`.
+
+## инструменты безопасности в пайплайне
+
+на каждый push запускаются:
+
+| Инструмент    | Тип                       | Что проверяет                                          |
+|---------------|---------------------------|--------------------------------------------------------|
+| Semgrep       | SAST                      | небезопасные паттерны в Python/FastAPI, OWASP Top 10   |
+| Trivy (fs)    | SCA / secrets / misconfig | уязвимости в зависимостях, секреты, слабые конфиги     |
+| Trivy (image) | scan образа               | уязвимости в базовом образе и слоях контейнера         |
+| Gitleaks      | secrets                   | токены, ключи и пароли в коде репозитория              |
+| Hadolint      | Dockerfile lint           | best practices для Dockerfile                          |
+
+## где смотреть отчёты безопасности
+
+1. GitHub → **Actions** → выбрать workflow run.
+2. Скачать артефакты job'ов (`semgrep-reports`, `trivy-fs-report`, `trivy-image-report`, `gitleaks-report`, `hadolint-report`).
+3. Для SARIF-отчётов — GitHub → **Security → Code scanning alerts**.
+
+## реестр образов
+
+образ публикуется в GitHub Container Registry:
+
+```
+ghcr.io/<user>/calculator_api_mvk:<APP_VERSION>
+ghcr.io/<user>/calculator_api_mvk:latest
+```
+
+теги видны в GitHub → **Packages** (в профиле пользователя или организации).
+
+## отчёт по безопасности
+
+разбор находок инструментов, слабых мест калькулятора и рекомендаций — в [SECURITY_REPORT.md](SECURITY_REPORT.md).
